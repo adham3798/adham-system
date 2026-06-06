@@ -1072,7 +1072,7 @@ async function loadDashboard() {
 
   // Stats
   document.getElementById('d-winrate').textContent = stats.win_rate + '%';
-  document.getElementById('d-winrate-sub').textContent = `${stats.total_correct} / ${stats.total_signals} signals correct`;
+  document.getElementById('d-winrate-sub').innerHTML = `${stats.total_correct}/${stats.total_signals} signals · <span class="gold">Nature-Cycle model ${stats.model_win_rate}%</span> (${stats.model_correct}/${stats.model_total})`;
   document.getElementById('d-avg-bull').textContent = '+$' + Math.abs(stats.avg_bull_move || 0).toFixed(2);
   document.getElementById('d-avg-bear').textContent = '-$' + Math.abs(stats.avg_bear_move || 0).toFixed(2);
 
@@ -1303,7 +1303,7 @@ async function openDetail(dateStr) {
 
   // Signal section
   html += `<div class="dp-section">
-    <div class="dp-section-title">Signal ${d.signal_src==='sheet'?'<span class="gold" style="font-size:9px;font-weight:700">● FROM YOUR SHEET</span>':''}</div>
+    <div class="dp-section-title">Signal ${d.signal_src==='sheet'?'<span class="gold" style="font-size:9px;font-weight:700">● FROM YOUR SHEET</span>':d.signal_src==='pullback'?'<span class="sell" style="font-size:9px;font-weight:700">● PULLBACK (movable 2-day reverse)</span>':''} ${d.power_date?'<span class="gold" style="font-size:9px;font-weight:700">★ POWER DATE 3·7·9</span>':''}</div>
     <div style="margin-bottom:8px">${signalPill(sig, true)}</div>
     ${d.reason?`<div class="text2 fs-12" style="margin:0 0 10px;line-height:1.5">💡 ${d.reason}</div>`:''}
     ${(d.buy_score!=null||d.sell_score!=null)?`<div class="dp-row"><span class="dr-label">Buy / Sell score</span><span class="dr-val"><span class="buy">${d.buy_score??'—'}</span> / <span class="sell">${d.sell_score??'—'}</span></span></div>`:''}
@@ -1313,7 +1313,16 @@ async function openDetail(dateStr) {
     ${d.confidence ? confBar(d.confidence, sig) : ''}
     <div class="dp-row mt-8"><span class="dr-label">Hist Bull / Bear</span><span class="dr-val"><span class="buy">${d.bull_pct||0}%</span> / <span class="sell">${d.bear_pct||0}%</span></span></div>
     <div class="dp-row"><span class="dr-label">Historical Matches</span><span class="dr-val">${d.matches||0}</span></div>
-    ${d.correct != null ? `<div class="dp-row"><span class="dr-label">Was Correct?</span><span class="dr-val ${d.correct?'buy':'sell'}">${d.correct?'✓ WIN':'✗ LOSS'}</span></div>` : ''}
+    ${d.correct != null ? `<div class="dp-row"><span class="dr-label">Was Correct?</span><span class="dr-val ${d.correct?'buy':'sell'}">${d.correct?'✓ WIN — TP hit':(d.tp_hit&&d.sl_hit?'✗ LOSS — stop risk first':(d.tp_hit?'✗ LOSS':'✗ LOSS — TP not reached'))}</span></div>
+    ${d.tp!=null?`<div class="dp-row"><span class="dr-label">TP1 (50%) / Stop</span><span class="dr-val">${fmt(d.tp)} / ${fmt(d.sl)}</span></div>`:''}` : ''}
+  </div>`;
+
+  // Nature-Cycle model (second opinion)
+  if (d.model_dir) html += `<div class="dp-section">
+    <div class="dp-section-title">Nature-Cycle Model ${d.model_agree===true?'<span class="buy" style="font-size:9px;font-weight:700">● AGREES</span>':d.model_agree===false?'<span class="sell" style="font-size:9px;font-weight:700">● DISAGREES</span>':''}</div>
+    <div class="dp-row"><span class="dr-label">Model direction</span><span class="dr-val ${d.model_dir==='BUY'?'buy':'sell'}">${d.model_dir==='BUY'?'▲ BUY':'▼ SELL'}</span></div>
+    <div class="dp-row"><span class="dr-label">Why</span><span class="dr-val" style="max-width:62%;text-align:right">${d.model_reason||''}</span></div>
+    ${d.model_correct!=null?`<div class="dp-row"><span class="dr-label">Model result</span><span class="dr-val ${d.model_correct?'buy':'sell'}">${d.model_correct?'✓ WIN':'✗ LOSS'}</span></div>`:''}
   </div>`;
 
   // Projected move (how far it can go)

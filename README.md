@@ -15,6 +15,11 @@ Data source: the same Google Sheet (`gold_price`, `MOON_REAL`, `H1_DATA`,
 `H4_DATA`, `WEEKLY_FORECAST`, libraries). Live spot price from gold-api.com.
 USD news from Forex Factory. Trades are saved in the browser (localStorage).
 
+Engine features (identical to the local Python build): astro+transit+day-number
+scoring, sheet-forecast override, movable 2-day pullback, 3·7·9 important dates,
+9-cycle end/turn, TP1(50%) win/loss, market-closed (weekends+holidays), and the
+**Nature-Cycle model** (second opinion, ~52% backtested) shown alongside each signal.
+
 ## Deploy to GitHub Pages
 1. Put these 4 files in a public repo (root), e.g. reuse `adham-system` or a new repo.
    - If reusing `adham-system`: your old ADHAM `index.html` is already here as `adham.html`;
