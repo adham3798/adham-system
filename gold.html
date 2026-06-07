@@ -1279,6 +1279,7 @@ function wgCard(d, future){
     <div class="wg-date">${wd} · ${dlabel}</div>
     <div class="wg-sign">${WG_EMO[sign]||''} ${sign} <span class="text3" style="font-size:9px">${(d.gender||'')[0]||''}·${nat?nat[0]+nat.slice(1).toLowerCase():''}</span></div>
     <div class="wg-story">Move ${wgMove(sign)}<br>${WG_GUIDE[sign]||''}</div>
+    ${(d.candle_note||d.trend_note)?`<div class="text3" style="font-size:9px;line-height:1.4">${d.trend_note?'trend '+(d.trend_note==='up'?'▲':'▼')+' · ':''}${d.candle_note||''}</div>`:''}
     ${body}
   </div>`;
 }

@@ -175,6 +175,12 @@ const GoldEngine = (function () {
     if(!parts.length)return verb+' — '+((sig==='WAIT'||sig==='NO TRADE')?'mixed signals — no clear edge':'weak edge');
     return verb+' — '+parts.slice(0,4).join('; '); }
 
+  function tpWindow(ds,direction,mv,n){ n=n||3; if(!mv)return[null,false,false]; const pdays=Object.keys(DATA.prices).sort().filter(d=>d>=ds).slice(0,n); if(!pdays.length)return[null,false,false]; const o=DATA.prices[pdays[0]].open; if(o==null)return[null,false,false]; const tp=direction==='BUY'?o+0.5*mv:o-0.5*mv,stop=direction==='BUY'?o-mv:o+mv;
+    for(const d of pdays){const pp=DATA.prices[d],hi=pp.high,lo=pp.low; if(hi==null||lo==null)continue; const ht=direction==='BUY'?hi>=tp:lo<=tp,hs=direction==='BUY'?lo<=stop:hi>=stop; if(ht&&hs)return[false,true,true]; if(ht)return[true,true,false]; if(hs)return[false,false,true];}
+    if(pdays.length<n)return[null,false,false]; return[false,false,false]; }
+  function candleNote(p){ const o=p.open,h=p.high,l=p.low,c=p.close; if([o,h,l,c].some(x=>x==null))return null; const rng=(h-l)||1,body=c-o,uw=h-Math.max(o,c),lw=Math.min(o,c)-l; if(Math.abs(body)<0.30*rng){ if(uw>lw*1.3)return'small body · upper-wick rejection (bearish tilt)'; if(lw>uw*1.3)return'small body · lower-wick rejection (bullish tilt)'; return'small body · indecision (continuation)';} return body>0?'strong bull body':'strong bear body'; }
+  function trendNote(ds){ const back=Object.keys(DATA.prices).sort().filter(d=>d<ds).slice(-3); if(back.length<2)return null; const net=DATA.prices[back[back.length-1]].close-DATA.prices[back[0]].open; return net>=0?'up':'down'; }
+
   // ---- build a day (mirror build_day) ----
   function buildDay(ds){
     const today=todayISO(); const m=DATA.moon[ds]; const p=DATA.prices[ds];
@@ -221,18 +227,19 @@ const GoldEngine = (function () {
     if(day.power_date&&day.expected_move){ day.expected_move=r2(day.expected_move*1.2); const anc=day.target_anchor; if(anc!=null&&day.target_dir)day.target=r2(day.target_dir==='up'?anc+day.expected_move:anc-day.expected_move); if(day.confidence)day.confidence=Math.min(100,day.confidence+6); }
     // WIN/LOSS via take-profit model (past days only)
     const sg=day.signal;
-    if(p&&day.is_past&&['BUY','STRONG BUY','SELL','STRONG SELL'].includes(sg)&&day.expected_move&&p.high!=null&&p.low!=null){
-      const o=p.open,hi=p.high,lo=p.low,mv=day.expected_move,tpDist=mv*0.5; let tp,sl,tpHit,slHit;
-      if(sg.includes('BUY')){tp=o+tpDist;sl=o-mv;tpHit=hi>=tp;slHit=lo<=sl;}
-      else {tp=o-tpDist;sl=o+mv;tpHit=lo<=tp;slHit=hi>=sl;}
-      day.tp=r2(tp);day.sl=r2(sl);day.tp_pct=50;day.tp_hit=tpHit;day.sl_hit=slHit;day.correct=!!(tpHit&&!slHit);
+    if(p&&day.is_past&&['BUY','STRONG BUY','SELL','STRONG SELL'].includes(sg)&&day.expected_move&&p.open!=null){
+      const o=p.open,mv=day.expected_move,ddir=sg.includes('BUY')?'BUY':'SELL';
+      if(ddir==='BUY'){day.tp=r2(o+0.5*mv);day.sl=r2(o-mv);}else{day.tp=r2(o-0.5*mv);day.sl=r2(o+mv);}
+      day.tp_pct=50;day.tp_window=3;
+      const wr=tpWindow(ds,ddir,mv,3); day.tp_hit=wr[1];day.sl_hit=wr[2]; if(wr[0]!=null)day.correct=wr[0];
     }
+    if(p){const cn=candleNote(p); if(cn)day.candle_note=cn;} const tn=trendNote(ds); if(tn)day.trend_note=tn;
     // nature-cycle model (second opinion)
     const mi=modelInfo(ds,todayISO());
     if(mi){ day.model_dir=mi.dir; day.model_reason=mi.reason; const prim=day.signal||''; const pd2=prim.includes('BUY')?'BUY':(prim.includes('SELL')?'SELL':null); day.model_agree=pd2?(pd2===mi.dir):null;
       if(m){ const mm=matchingMoves(ds,m.sign,m.stage); const mv=r2(mi.dir==='BUY'?mm.avg_up:mm.avg_down); const anchor=day.open||chainedAnchor(ds,todayISO())||(DATA.moves&&DATA.moves.last_close)||0; day.model_move=mv;
         if(anchor){ if(mi.dir==='BUY'){day.model_anchor=r2(anchor);day.model_tp=r2(anchor+0.5*mv);day.model_invalidate=r2(anchor-mv);day.model_exp_high=r2(anchor+mv);day.model_exp_low=r2(anchor-0.4*mv);} else {day.model_anchor=r2(anchor);day.model_tp=r2(anchor-0.5*mv);day.model_invalidate=r2(anchor+mv);day.model_exp_high=r2(anchor+0.4*mv);day.model_exp_low=r2(anchor-mv);} }
-        if(p&&day.is_past&&p.high!=null&&p.low!=null){ const o=p.open,hi=p.high,lo=p.low,tpd=mv*0.5; let th,sh; if(mi.dir==='BUY'){th=hi>=o+tpd;sh=lo<=o-mv;}else{th=lo<=o-tpd;sh=hi>=o+mv;} day.model_tp_hit=th;day.model_sl_hit=sh;day.model_correct=!!(th&&!sh); } } }
+        if(p&&day.is_past&&p.open!=null){ const wr=tpWindow(ds,mi.dir,mv,3); day.model_tp_hit=wr[1];day.model_sl_hit=wr[2]; if(wr[0]!=null)day.model_correct=wr[0]; } } }
     day.reason=signalReason(day);
     const nw=NEWS[ds]||[]; day.usd_news=nw; day.usd_news_count=nw.length;
     return day;
