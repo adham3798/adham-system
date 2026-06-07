@@ -560,6 +560,12 @@ input,select,textarea{font-family:inherit}
         </div>
       </div>
 
+      <!-- Key Levels Reaction Cheat Sheet -->
+      <div class="card mb-20">
+        <div class="card-header"><span class="card-title">Key Levels — Reaction Cheat Sheet</span><span class="text3 fs-11">holds% = reverses when touched · breaks% = pushes through (all history)</span></div>
+        <div id="d-levels"><div class="loading-spinner"><div class="spinner"></div></div></div>
+      </div>
+
       <!-- Price Chart -->
       <div class="card mb-20">
         <div class="card-header">
@@ -1042,9 +1048,11 @@ async function loadChart(days) {
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────────
 async function loadDashboard() {
-  const [dash, stats] = await Promise.all([
+  const [dash, stats, levels, live] = await Promise.all([
     fetch('/api/dashboard').then(r => r.json()),
     fetch('/api/stats').then(r => r.json()),
+    fetch('/api/levels').then(r => r.json()),
+    fetch('/api/live-price').then(r => r.json()),
   ]);
 
   // Today signal card
@@ -1084,6 +1092,9 @@ async function loadDashboard() {
 
   // Forecast strip
   renderForecastStrip(dash.upcoming);
+
+  // Key levels reaction cheat sheet
+  renderLevels(levels, (live && live.status==='ok') ? live.price : null);
 
   // Chart
   await loadChart(90);
@@ -1175,6 +1186,33 @@ function renderForecastStrip(days) {
       <div style="font-size:10px;color:var(--text3)">${d.confidence?d.confidence+'% conf':'—'}</div>
     </div>`;
   }).join('');
+}
+
+// ── KEY LEVELS CHEAT SHEET ───────────────────────────────────────────────────
+function renderLevels(data, price) {
+  const el = document.getElementById('d-levels'); if (!el) return;
+  const lv = (data && data.levels) || [];
+  if (!lv.length) { el.innerHTML = '<div class="empty-state">No level data</div>'; return; }
+  el.innerHTML = `<table class="data-table">
+    <thead><tr><th>Level</th><th>Price</th><th>Now</th><th>Reaction when touched</th><th>Touched</th></tr></thead>
+    <tbody>${lv.map(L => {
+      const above = price!=null ? price>=L.price : null;
+      const pos = above===null ? '<span class="text3">—</span>' : above ? '<span class="buy">▲ above</span>' : '<span class="sell">▼ below</span>';
+      let react;
+      if (L.hold_pct!=null) {
+        const cls = L.hold_pct>=55?'buy':L.hold_pct<=45?'sell':'';
+        react = `<span class="${cls}">holds ${L.hold_pct}%</span> <span class="text3">/ breaks ${L.break_pct}%</span>${L.hold_pct>=60?' ★':''}`;
+      } else { react = '<span class="text2">magnet (touched most days)</span>'; }
+      const near = price!=null && Math.abs(price-L.price) <= 5;
+      return `<tr${near?' style="background:var(--gold-bg)"':''}>
+        <td><b>${L.name}</b></td>
+        <td class="num">${fmt(L.price)}</td>
+        <td>${pos}</td>
+        <td class="fs-12">${react}</td>
+        <td class="text3 fs-11">${L.touch_pct!=null?L.touch_pct+'%':'—'}</td>
+      </tr>`;
+    }).join('')}</tbody></table>
+    <div class="text3 fs-11 mt-8">★ = strong reaction level (holds ≥60%). Levels from last close's pivots; reaction % from full price history.</div>`;
 }
 
 // ── CALENDAR ───────────────────────────────────────────────────────────────────
@@ -1534,20 +1572,20 @@ async function loadAnalysis() {
     fetch('/api/stats').then(r => r.json()),
   ]);
 
-  // Top stats
-  document.getElementById('an-wr').textContent     = stats.win_rate + '%';
-  document.getElementById('an-wr-sub').textContent = `${stats.total_correct}/${stats.total_signals} signals correct`;
+  // Top stats — Nature-Cycle model (the validated engine)
+  document.getElementById('an-wr').textContent     = stats.model_win_rate + '%';
+  document.getElementById('an-wr-sub').textContent = `${stats.model_correct}/${stats.model_total} model calls correct (Nature-Cycle)`;
   document.getElementById('an-bull').textContent    = stats.total_bull;
   document.getElementById('an-bull-sub').textContent= `avg +$${Math.abs(stats.avg_bull_move)} per day`;
   document.getElementById('an-bear').textContent    = stats.total_bear;
   document.getElementById('an-bear-sub').textContent= `avg -$${Math.abs(stats.avg_bear_move)} per day`;
-  document.getElementById('an-correct-n').textContent = stats.total_correct;
-  document.getElementById('an-wrong-n').textContent   = stats.total_signals - stats.total_correct;
-  document.getElementById('an-nosig-n').textContent   = stats.total_prices - stats.total_signals;
+  document.getElementById('an-correct-n').textContent = stats.model_correct;
+  document.getElementById('an-wrong-n').textContent   = stats.model_total - stats.model_correct;
+  document.getElementById('an-nosig-n').textContent   = stats.model_no_signal;
 
-  // Monthly P&L chart
+  // Monthly P&L chart (model)
   destroyChart('monthly');
-  const months = Object.entries(stats.monthly||{}).sort((a,b)=>a[0]>b[0]?1:-1);
+  const months = Object.entries(stats.model_monthly||{}).sort((a,b)=>a[0]>b[0]?1:-1);
   const ctx2 = document.getElementById('monthlyChart').getContext('2d');
   S.charts['monthly'] = new Chart(ctx2, {
     type: 'bar',
@@ -1571,11 +1609,11 @@ async function loadAnalysis() {
     }
   });
 
-  // Donut chart
+  // Donut chart (model)
   destroyChart('donut');
-  const correct = stats.total_correct;
-  const wrong   = stats.total_signals - correct;
-  const nosig   = stats.total_prices  - stats.total_signals;
+  const correct = stats.model_correct;
+  const wrong   = stats.model_total - stats.model_correct;
+  const nosig   = stats.model_no_signal;
   const ctx3 = document.getElementById('donutChart').getContext('2d');
   S.charts['donut'] = new Chart(ctx3, {
     type: 'doughnut',
