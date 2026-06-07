@@ -155,6 +155,8 @@ input,select,textarea{font-family:inherit}
    CARDS / GRID
 ═══════════════════════════════════════════════════════════ */
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media(max-width:820px){.grid-4{grid-template-columns:repeat(2,1fr)}}
 .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 .grid-auto{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 
@@ -221,6 +223,7 @@ input,select,textarea{font-family:inherit}
 .wg-card{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--nd);border-radius:10px;padding:10px;font-size:11px;display:flex;flex-direction:column;gap:5px}
 .wg-card.buy{border-top-color:var(--buy)} .wg-card.sell{border-top-color:var(--sell)} .wg-card.wait{border-top-color:var(--wait)}
 .wg-card.win{box-shadow:inset 0 0 0 1px rgba(16,217,139,.35)} .wg-card.loss{box-shadow:inset 0 0 0 1px rgba(240,72,106,.35)}
+.wg-card.ctrend{opacity:.5}
 .wg-date{font-weight:700;color:var(--text2);letter-spacing:.5px;font-size:10px}
 .wg-sign{font-size:13px;font-weight:700}
 .wg-story{color:var(--text2);line-height:1.4;min-height:46px;font-size:10px}
@@ -732,12 +735,18 @@ input,select,textarea{font-family:inherit}
     <!-- ═══════ PAGE: ANALYSIS ═══════ -->
     <div class="page" id="page-analysis">
       <!-- Top stats -->
-      <div class="grid-3 mb-20">
+      <div class="grid-4 mb-20">
         <div class="stat-card">
           <div class="stat-icon">📈</div>
           <div class="stat-label">System Win Rate</div>
           <div class="stat-value" id="an-wr">—</div>
           <div class="stat-sub text2 fs-12" id="an-wr-sub"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💰</div>
+          <div class="stat-label">Total Expected R</div>
+          <div class="stat-value gold" id="an-r">—</div>
+          <div class="stat-sub text2 fs-12" id="an-r-sub"></div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">🐂</div>
@@ -765,8 +774,9 @@ input,select,textarea{font-family:inherit}
           <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:30px">
             <div class="chart-wrap" style="width:160px;height:160px"><canvas id="donutChart"></canvas></div>
             <div style="display:flex;flex-direction:column;gap:10px">
-              <div><div class="fs-11 text3 mb-4">Correct</div><div class="semi buy" id="an-correct-n">—</div></div>
-              <div><div class="fs-11 text3 mb-4">Wrong</div><div class="semi sell" id="an-wrong-n">—</div></div>
+              <div><div class="fs-11 text3 mb-4">Win</div><div class="semi buy" id="an-correct-n">—</div></div>
+              <div><div class="fs-11 text3 mb-4">Breakeven</div><div class="semi gold" id="an-be-n">—</div></div>
+              <div><div class="fs-11 text3 mb-4">Loss</div><div class="semi sell" id="an-wrong-n">—</div></div>
               <div><div class="fs-11 text3 mb-4">No Signal</div><div class="semi text2" id="an-nosig-n">—</div></div>
             </div>
           </div>
@@ -1102,8 +1112,8 @@ async function loadDashboard() {
     t.stage ? `<span class="badge-${t.stage==='START'?'blue':t.stage==='MOVE'?'gold':'nd'} stat-badge">${t.stage}</span> ${t.sign_bias||''} · ${t.phase_mood||''}` : '<span class="text3">—</span>';
 
   // Stats
-  document.getElementById('d-winrate').textContent = stats.win_rate + '%';
-  document.getElementById('d-winrate-sub').innerHTML = `${stats.total_correct}/${stats.total_signals} signals · <span class="gold">Nature-Cycle model ${stats.model_win_rate}%</span> (${stats.model_correct}/${stats.model_total})`;
+  document.getElementById('d-winrate').textContent = stats.model_win_rate + '%';
+  document.getElementById('d-winrate-sub').innerHTML = `${stats.model_correct}W·${stats.model_be||0}BE·${stats.model_loss||0}L · <span class="gold" style="font-weight:700">${(stats.model_total_r>=0?'+':'')}${stats.model_total_r}R</span> expected (1:1+BE)`;
   document.getElementById('d-avg-bull').textContent = '+$' + Math.abs(stats.avg_bull_move || 0).toFixed(2);
   document.getElementById('d-avg-bear').textContent = '-$' + Math.abs(stats.avg_bear_move || 0).toFixed(2);
 
@@ -1176,7 +1186,7 @@ function renderRecent(days) {
     <thead><tr><th>Date</th><th>Signal</th><th>Actual</th><th>Result</th><th>Change</th></tr></thead>
     <tbody>
       ${days.map(d => {
-        const correct = d.correct === true ? '<span class="buy">✓ Yes</span>' : d.correct === false ? '<span class="sell">✗ No</span>' : '<span class="text3">—</span>';
+        const correct = d.outcome === 'W' ? '<span class="buy">✓ WIN</span>' : d.outcome === 'BE' ? '<span class="gold">⊘ BE</span>' : d.outcome === 'L' ? '<span class="sell">✗ LOSS</span>' : '<span class="text3">—</span>';
         return `<tr>
           <td>${new Date(d.date+'T12:00').toLocaleDateString('en',{month:'short',day:'numeric'})}</td>
           <td>${d.signal ? signalPill(d.signal) : '<span class="text3">—</span>'}</td>
@@ -1266,21 +1276,24 @@ function wgCard(d, future){
   if(future){
     body=`<div class="${cls==='buy'?'buy':'sell'}" style="font-weight:700">${arrow} ${md}</div>
       <div class="wg-row"><span>act from</span><span>${d.model_anchor!=null?fmt(d.model_anchor):'—'}</span></div>
-      <div class="wg-row"><span>TP1</span><span>${d.model_tp!=null?fmt(d.model_tp):'—'}</span></div>
+      <div class="wg-row"><span>target (1:1)</span><span>${d.model_tp!=null?fmt(d.model_tp):'—'}</span></div>
+      <div class="wg-row"><span>breakeven at</span><span>${d.model_be!=null?fmt(d.model_be):'—'}</span></div>
       <div class="wg-row"><span>invalidate</span><span>${d.model_invalidate!=null?fmt(d.model_invalidate):'—'}</span></div>
       <div class="wg-row"><span>exp H/L</span><span>${d.model_exp_high!=null?fmt(d.model_exp_high):'—'} / ${d.model_exp_low!=null?fmt(d.model_exp_low):'—'}</span></div>`;
   } else {
-    const win=d.model_correct===true,loss=d.model_correct===false;
-    const res=win?'<span class="buy">✓ WIN</span>':loss?'<span class="sell">✗ LOSS</span>':'<span class="text3">—</span>';
+    const o=d.model_outcome; const win=o==='W',be=o==='BE',loss=o==='L';
+    const res=win?'<span class="buy">✓ WIN +1R</span>':be?'<span class="gold">⊘ BREAKEVEN 0R</span>':loss?'<span class="sell">✗ LOSS −1R</span>':'<span class="text3">—</span>';
     body=`<div class="wg-row"><span>${arrow} ${md}</span><span>actual ${d.direction||'?'}</span></div><div>${res}</div>${loss?`<div class="wg-why">⚠ ${wgWhy(d)}</div>`:''}`;
   }
-  const rc=(!future&&d.model_correct===true)?' win':(!future&&d.model_correct===false)?' loss':'';
-  return `<div class="wg-card ${cls}${rc}">
-    <div class="wg-date">${wd} · ${dlabel}</div>
+  const rc=(!future&&d.model_outcome==='W')?' win':(!future&&d.model_outcome==='L')?' loss':'';
+  const ct=d.model_with_trend===false;
+  return `<div class="wg-card ${cls}${rc}${ct?' ctrend':''}">
+    <div class="wg-date">${wd} · ${dlabel} ${d.weekly_bias?`<span class="${d.weekly_bias==='bull'?'buy':'sell'}" style="font-size:8px">wk ${d.weekly_bias}</span>`:''}</div>
     <div class="wg-sign">${WG_EMO[sign]||''} ${sign} <span class="text3" style="font-size:9px">${(d.gender||'')[0]||''}·${nat?nat[0]+nat.slice(1).toLowerCase():''}</span></div>
     <div class="wg-story">Move ${wgMove(sign)}<br>${WG_GUIDE[sign]||''}</div>
     ${(d.candle_note||d.trend_note)?`<div class="text3" style="font-size:9px;line-height:1.4">${d.trend_note?'trend '+(d.trend_note==='up'?'▲':'▼')+' · ':''}${d.candle_note||''}</div>`:''}
     ${body}
+    ${ct?`<div class="wg-why">↩ counter-trend (week ${d.weekly_bias||'?'}) — pullback, skip</div>`:''}
   </div>`;
 }
 function wgLevelsHtml(data, price){
@@ -1326,8 +1339,8 @@ async function loadCalendar() {
       'cal-day',
       d.is_today ? 'today' : '',
       d.is_past  ? 'past'  : '',
-      d.correct === true  ? 'correct-yes' : '',
-      d.correct === false ? 'correct-no'  : '',
+      d.outcome === 'W' ? 'correct-yes' : '',
+      d.outcome === 'L' ? 'correct-no'  : '',
     ].filter(Boolean).join(' ');
     const dateNum = parseInt(d.date.split('-')[2]);
     html += `<div class="${cls}${d.market_closed?' closed':''}" onclick="openDetail('${d.date}')">
@@ -1365,8 +1378,9 @@ async function loadForecast(past, future) {
 
     // outcome badge for past days
     let outcome = '';
-    if (d.is_past && d.correct === true)  outcome = '<span class="badge-buy stat-badge">✓ WIN</span>';
-    else if (d.is_past && d.correct === false) outcome = '<span class="badge-sell stat-badge">✗ LOSS</span>';
+    if (d.is_past && d.outcome === 'W')  outcome = '<span class="badge-buy stat-badge">✓ WIN +1R</span>';
+    else if (d.is_past && d.outcome === 'BE') outcome = '<span class="stat-badge" style="background:rgba(212,175,55,.18);color:var(--gold)">⊘ BREAKEVEN</span>';
+    else if (d.is_past && d.outcome === 'L') outcome = '<span class="badge-sell stat-badge">✗ LOSS −1R</span>';
     else if (d.is_past && d.direction)    outcome = `<span class="text3 fs-11">actual ${d.direction}</span>`;
 
     const retro = (d.retrogrades&&d.retrogrades.length) ? `<span class="sell">℞ ${d.retrogrades.join(',')}</span>` : '';
@@ -1443,8 +1457,8 @@ async function openDetail(dateStr) {
     ${d.confidence ? confBar(d.confidence, sig) : ''}
     <div class="dp-row mt-8"><span class="dr-label">Hist Bull / Bear</span><span class="dr-val"><span class="buy">${d.bull_pct||0}%</span> / <span class="sell">${d.bear_pct||0}%</span></span></div>
     <div class="dp-row"><span class="dr-label">Historical Matches</span><span class="dr-val">${d.matches||0}</span></div>
-    ${d.correct != null ? `<div class="dp-row"><span class="dr-label">Was Correct?</span><span class="dr-val ${d.correct?'buy':'sell'}">${d.correct?'✓ WIN — TP hit':(d.tp_hit&&d.sl_hit?'✗ LOSS — stop risk first':(d.tp_hit?'✗ LOSS':'✗ LOSS — TP not reached'))}</span></div>
-    ${d.tp!=null?`<div class="dp-row"><span class="dr-label">TP1 (50%) / Stop</span><span class="dr-val">${fmt(d.tp)} / ${fmt(d.sl)}</span></div>`:''}` : ''}
+    ${d.outcome != null ? `<div class="dp-row"><span class="dr-label">Result</span><span class="dr-val ${d.outcome==='W'?'buy':d.outcome==='BE'?'gold':'sell'}">${d.outcome==='W'?'✓ WIN — target hit (+1R)':d.outcome==='BE'?'⊘ BREAKEVEN — stop trailed (0R)':'✗ LOSS — stopped (−1R)'}</span></div>
+    ${d.tp!=null?`<div class="dp-row"><span class="dr-label">Target / BE / Stop (1:1)</span><span class="dr-val">${fmt(d.tp)} / ${d.be!=null?fmt(d.be):'—'} / ${fmt(d.sl)}</span></div>`:''}` : ''}
   </div>`;
 
   // Nature-Cycle model (second opinion)
@@ -1452,7 +1466,7 @@ async function openDetail(dateStr) {
     <div class="dp-section-title">Nature-Cycle Model ${d.model_agree===true?'<span class="buy" style="font-size:9px;font-weight:700">● AGREES</span>':d.model_agree===false?'<span class="sell" style="font-size:9px;font-weight:700">● DISAGREES</span>':''}</div>
     <div class="dp-row"><span class="dr-label">Model direction</span><span class="dr-val ${d.model_dir==='BUY'?'buy':'sell'}">${d.model_dir==='BUY'?'▲ BUY':'▼ SELL'}</span></div>
     <div class="dp-row"><span class="dr-label">Why</span><span class="dr-val" style="max-width:62%;text-align:right">${d.model_reason||''}</span></div>
-    ${d.model_correct!=null?`<div class="dp-row"><span class="dr-label">Model result</span><span class="dr-val ${d.model_correct?'buy':'sell'}">${d.model_correct?'✓ WIN':'✗ LOSS'}</span></div>`:''}
+    ${d.model_outcome!=null?`<div class="dp-row"><span class="dr-label">Model result</span><span class="dr-val ${d.model_outcome==='W'?'buy':d.model_outcome==='BE'?'gold':'sell'}">${d.model_outcome==='W'?'✓ WIN (+1R)':d.model_outcome==='BE'?'⊘ BREAKEVEN (0R)':'✗ LOSS (−1R)'}</span></div>`:''}
   </div>`;
 
   // Projected move (how far it can go)
@@ -1666,13 +1680,19 @@ async function loadAnalysis() {
 
   // Top stats — Nature-Cycle model (the validated engine)
   document.getElementById('an-wr').textContent     = stats.model_win_rate + '%';
-  document.getElementById('an-wr-sub').textContent = `${stats.model_correct}/${stats.model_total} model calls correct (Nature-Cycle)`;
+  document.getElementById('an-wr-sub').textContent = `${stats.model_correct}W · ${stats.model_be||0}BE · ${stats.model_loss||0}L (1:1 + breakeven trail)`;
+  const tr = stats.model_total_r||0, exp = stats.model_expectancy||0;
+  const anR = document.getElementById('an-r');
+  anR.textContent = (tr>=0?'+':'') + tr + 'R';
+  anR.style.color = tr>=0 ? 'var(--buy)' : 'var(--sell)';
+  document.getElementById('an-r-sub').textContent = `${(exp>=0?'+':'')}${exp}R per trade · over ${stats.model_total} trades`;
   document.getElementById('an-bull').textContent    = stats.total_bull;
   document.getElementById('an-bull-sub').textContent= `avg +$${Math.abs(stats.avg_bull_move)} per day`;
   document.getElementById('an-bear').textContent    = stats.total_bear;
   document.getElementById('an-bear-sub').textContent= `avg -$${Math.abs(stats.avg_bear_move)} per day`;
   document.getElementById('an-correct-n').textContent = stats.model_correct;
-  document.getElementById('an-wrong-n').textContent   = stats.model_total - stats.model_correct;
+  document.getElementById('an-be-n').textContent      = stats.model_be || 0;
+  document.getElementById('an-wrong-n').textContent   = stats.model_loss;
   document.getElementById('an-nosig-n').textContent   = stats.model_no_signal;
 
   // Monthly P&L chart (model)
@@ -1704,17 +1724,18 @@ async function loadAnalysis() {
   // Donut chart (model)
   destroyChart('donut');
   const correct = stats.model_correct;
-  const wrong   = stats.model_total - stats.model_correct;
+  const breakeven = stats.model_be || 0;
+  const wrong   = stats.model_loss;
   const nosig   = stats.model_no_signal;
   const ctx3 = document.getElementById('donutChart').getContext('2d');
   S.charts['donut'] = new Chart(ctx3, {
     type: 'doughnut',
     data: {
-      labels: ['Correct','Wrong','No Signal'],
+      labels: ['Win','Breakeven','Loss','No Signal'],
       datasets: [{
-        data: [correct, wrong, nosig],
-        backgroundColor: ['rgba(16,217,139,.7)','rgba(240,72,106,.7)','rgba(67,90,114,.5)'],
-        borderColor:     ['rgba(16,217,139,1)','rgba(240,72,106,1)','rgba(67,90,114,1)'],
+        data: [correct, breakeven, wrong, nosig],
+        backgroundColor: ['rgba(16,217,139,.7)','rgba(212,175,55,.7)','rgba(240,72,106,.7)','rgba(67,90,114,.5)'],
+        borderColor:     ['rgba(16,217,139,1)','rgba(212,175,55,1)','rgba(240,72,106,1)','rgba(67,90,114,1)'],
         borderWidth:1, hoverOffset:4,
       }]
     },
